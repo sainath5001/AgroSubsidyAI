@@ -19,15 +19,15 @@ export function ImpactStats() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5, delay: index * 0.1 }}
-            className="rounded-[28px] border border-slate-300/50 dark:border-white/15 bg-white/80 dark:bg-white/5 p-6"
+            className="rounded-[28px] border border-white/15 bg-white/5 p-6"
           >
-            <p className="text-sm font-semibold uppercase tracking-[0.3em] text-cyan-600 dark:text-cyan-200">
+            <p className="text-sm font-semibold uppercase tracking-[0.3em] text-cyan-200">
               {stat.label}
             </p>
-            <p className="mt-4 font-display text-4xl text-slate-900 dark:text-white">
+            <p className="mt-4 font-display text-4xl text-white">
               {stat.value}
             </p>
-            <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{stat.subtext}</p>
+            <p className="mt-3 text-sm text-slate-300">{stat.subtext}</p>
           </motion.div>
         ))}
       </div>

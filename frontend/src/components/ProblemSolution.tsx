@@ -23,17 +23,17 @@ export function ProblemSolution() {
           >
             <p
               className={`text-sm font-semibold uppercase tracking-[0.3em] ${
-                column.tone === "problem" ? "text-rose-600 dark:text-rose-300" : "text-emerald-600 dark:text-emerald-300"
+                column.tone === "problem" ? "text-rose-300" : "text-emerald-300"
               }`}
             >
               {column.title}
             </p>
-            <ul className="mt-6 space-y-4 text-lg text-slate-700 dark:text-slate-100">
+            <ul className="mt-6 space-y-4 text-lg text-slate-100">
               {column.items.map((item) => (
                 <li key={item} className="flex items-start gap-3">
                   <span
                     className={`mt-1 inline-block h-2 w-2 rounded-full ${
-                      column.tone === "problem" ? "bg-rose-500 dark:bg-rose-400" : "bg-emerald-500 dark:bg-emerald-400"
+                      column.tone === "problem" ? "bg-rose-400" : "bg-emerald-400"
                     }`}
                   />
                   <span>{item}</span>

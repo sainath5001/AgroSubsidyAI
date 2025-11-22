@@ -27,7 +27,7 @@ export function SectionTitle({
         initial={{ opacity: 0, y: 8 }}
         whileInView={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="text-sm font-semibold uppercase tracking-[0.3em] text-cyan-600 dark:text-cyan-300"
+        className="text-sm font-semibold uppercase tracking-[0.3em] text-cyan-300"
       >
         {eyebrow}
       </motion.p>
@@ -35,7 +35,7 @@ export function SectionTitle({
         initial={{ opacity: 0, y: 16 }}
         whileInView={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, delay: 0.1 }}
-        className="mt-4 font-display text-3xl sm:text-4xl lg:text-5xl text-slate-900 dark:text-white"
+        className="mt-4 font-display text-3xl sm:text-4xl lg:text-5xl text-white"
       >
         {title}
       </motion.h2>

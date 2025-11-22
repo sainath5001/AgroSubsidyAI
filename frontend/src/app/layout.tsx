@@ -27,12 +27,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="dark">
       <body
-        className={`${spaceGrotesk.variable} ${inter.variable} antialiased bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300`}
+        className={`${spaceGrotesk.variable} ${inter.variable} antialiased bg-slate-950 text-white`}
       >
         <Providers>
-          <div className="min-h-screen bg-gradient-to-b from-slate-50 via-slate-50 to-slate-100 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 transition-colors duration-300">
+          <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900">
             {children}
           </div>
         </Providers>

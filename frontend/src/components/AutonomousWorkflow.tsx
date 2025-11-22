@@ -913,7 +913,7 @@ export function AutonomousWorkflow() {
   };
 
   return (
-    <section className="relative py-24 px-4 bg-gradient-to-b from-slate-50 via-slate-100 to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 min-h-screen transition-colors duration-300">
+    <section className="relative py-24 px-4 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 min-h-screen">
       <div className="max-w-7xl mx-auto">
         {/* Toast Notifications */}
         <ToastContainer toasts={toasts} onRemove={removeToast} />
@@ -923,7 +923,7 @@ export function AutonomousWorkflow() {
           <h2 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
             Autonomous Subsidy Distribution
           </h2>
-          <p className="text-xl text-slate-600 dark:text-slate-400 max-w-3xl mx-auto mb-6">
+          <p className="text-xl text-slate-400 max-w-3xl mx-auto mb-6">
             Deposit funds, register farmers, and let AI handle the rest—completely autonomously
           </p>
           
@@ -940,7 +940,7 @@ export function AutonomousWorkflow() {
                 className={`relative p-6 rounded-2xl border-2 transition-all backdrop-blur-sm ${
               phase === "deposit"
                 ? "border-blue-500/50 bg-blue-500/10 shadow-lg shadow-blue-500/20"
-                : "border-slate-300/50 dark:border-slate-700/50 bg-white/50 dark:bg-slate-800/30"
+                : "border-slate-700/50 bg-slate-800/30"
             }`}
           >
             <div className="flex items-center gap-3 mb-4">
@@ -972,7 +972,7 @@ export function AutonomousWorkflow() {
                     value={depositAmount}
                     onChange={(e) => setDepositAmount(e.target.value)}
                     placeholder="0.0005"
-                    className="w-full px-4 py-3 bg-white dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
                     disabled={depositPending}
                     aria-label="Deposit amount in ETH"
                   />
@@ -1074,7 +1074,7 @@ export function AutonomousWorkflow() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
             className={`relative p-6 rounded-2xl border-2 transition-all backdrop-blur-sm ${
-              aiActive ? "border-pink-500/50 bg-pink-500/10 shadow-lg shadow-pink-500/20" : "border-slate-300/50 dark:border-slate-700/50 bg-white/50 dark:bg-slate-800/30"
+              aiActive ? "border-pink-500/50 bg-pink-500/10 shadow-lg shadow-pink-500/20" : "border-slate-700/50 bg-slate-800/30"
             }`}
           >
             <div className="flex items-center gap-3 mb-4">
@@ -1126,10 +1126,10 @@ export function AutonomousWorkflow() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="relative p-8 rounded-2xl border border-slate-300/50 dark:border-slate-700/50 bg-white/50 dark:bg-slate-800/30 backdrop-blur-sm mb-8 transition-colors duration-300"
+            className="relative p-8 rounded-2xl border border-slate-700/50 bg-slate-800/30 backdrop-blur-sm mb-8"
           >
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-2xl font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+              <h3 className="text-2xl font-semibold text-white flex items-center gap-2">
                 <UserGroupIcon className="w-6 h-6 text-purple-400" />
                 Register Farmer
               </h3>
@@ -1142,7 +1142,7 @@ export function AutonomousWorkflow() {
             <form onSubmit={handleRegister} className="space-y-5">
               <div className="grid md:grid-cols-2 gap-5">
                 <div>
-                  <label className="block text-sm text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1">
+                  <label className="block text-sm text-slate-400 mb-2 flex items-center gap-1">
                     Recipient Address <span className="text-red-400">*</span>
                     <InformationCircleIcon className="w-4 h-4 text-slate-500" title="Ethereum address to receive subsidy payments" />
                   </label>
@@ -1173,7 +1173,7 @@ export function AutonomousWorkflow() {
                   <p className="text-xs text-slate-500 mt-1">Address to receive subsidy payments</p>
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1">
+                  <label className="block text-sm text-slate-400 mb-2 flex items-center gap-1">
                     Land Proof Hash <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -1202,7 +1202,7 @@ export function AutonomousWorkflow() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1">
+                  <label className="block text-sm text-slate-400 mb-2 flex items-center gap-1">
                     District <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -1231,7 +1231,7 @@ export function AutonomousWorkflow() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1">
+                  <label className="block text-sm text-slate-400 mb-2 flex items-center gap-1">
                     Village <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -1372,10 +1372,10 @@ export function AutonomousWorkflow() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="relative p-8 rounded-2xl border border-slate-300/50 dark:border-slate-700/50 bg-white/50 dark:bg-slate-800/30 backdrop-blur-sm mb-8 transition-colors duration-300"
+            className="relative p-8 rounded-2xl border border-slate-700/50 bg-slate-800/30 backdrop-blur-sm mb-8"
           >
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-2xl font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+              <h3 className="text-2xl font-semibold text-white flex items-center gap-2">
                 <CloudIcon className="w-6 h-6 text-blue-400" />
                 Weather Oracle Data (AI Generated)
               </h3>
@@ -1466,7 +1466,7 @@ export function AutonomousWorkflow() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="relative p-8 rounded-2xl border border-slate-300/50 dark:border-slate-700/50 bg-white/50 dark:bg-slate-800/30 backdrop-blur-sm mb-8 transition-colors duration-300"
+            className="relative p-8 rounded-2xl border border-slate-700/50 bg-slate-800/30 backdrop-blur-sm mb-8"
           >
             <h3 className="text-2xl font-semibold text-white mb-6 flex items-center gap-2">
               <StarIcon className="w-6 h-6 text-yellow-400" />
@@ -1498,7 +1498,7 @@ export function AutonomousWorkflow() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="relative p-8 rounded-2xl border border-slate-300/50 dark:border-slate-700/50 bg-white/50 dark:bg-slate-800/30 backdrop-blur-sm mb-8 transition-colors duration-300"
+            className="relative p-8 rounded-2xl border border-slate-700/50 bg-slate-800/30 backdrop-blur-sm mb-8"
           >
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
