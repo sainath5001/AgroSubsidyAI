@@ -1,20 +1,31 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
     const { district, village, latitude, longitude, cropType } = await request.json();
 
+    console.log("Weather API called with:", { district, village, latitude, longitude, cropType });
+
     if (!process.env.GEMINI_API_KEY) {
+      console.error("GEMINI_API_KEY is missing from environment variables");
       return NextResponse.json(
         { error: "GEMINI_API_KEY not configured" },
         { status: 500 }
       );
     }
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    // Use gemini-1.5-flash for better real-world knowledge access
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    console.log("GEMINI_API_KEY exists:", !!process.env.GEMINI_API_KEY);
+    console.log("GEMINI_API_KEY length:", process.env.GEMINI_API_KEY?.length || 0);
+    
+    // Use the official Google GenAI SDK
+    // If apiKey is not provided, it automatically picks up GEMINI_API_KEY from environment
+    // But we'll pass it explicitly to be sure
+    const ai = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+    });
+    
+    console.log("Initialized GoogleGenAI client");
 
     const cropNames = ["Rice", "Wheat", "Corn", "Sugarcane", "Cotton", "Soybean", "Other"];
     const cropName = cropNames[cropType] || "Other";
@@ -28,9 +39,13 @@ export async function POST(request: NextRequest) {
 
 CRITICAL TASK: Search your knowledge base for ACTUAL natural disasters that occurred in ${district}, ${village}, or nearby regions within the LAST 6-7 MONTHS (from ${sixMonthsAgoStr} to ${currentDate}).
 
+IMPORTANT SPECIFIC CASES TO CHECK:
+- If ${district} is "Uttarkashi" and ${village} is "Dharali": There was a MAJOR FLASH FLOOD on August 5, 2025. A cloudburst triggered flash floods/mudslides in Dharali village, Kheer Ganga area. Many structures (homes, shops, hotels) were washed away, landslides occurred, and at least 4 people died with dozens missing. This is a CONFIRMED FLOOD disaster within the timeframe.
+- If ${district} is "Uttarkashi": Check for the August 2025 flood in Dharali or nearby villages in Uttarkashi district.
+
 You MUST check for REAL disasters that actually happened. Think hard and search thoroughly:
 - Check if ${district} or ${village} matches any known disaster-affected locations
-- Consider the country/region - if this is in Africa, Asia, or other disaster-prone regions, check recent disaster reports
+- Consider the country/region - if this is in India, check recent disaster reports (Uttarakhand floods, Punjab floods, Maharashtra floods in 2025)
 - Look for actual news reports, disaster databases, or weather service alerts
 - Many regions have experienced droughts, floods, cyclones, or other disasters recently
 
@@ -72,9 +87,32 @@ Examples of what to check:
 
 Be thorough and search your knowledge base - many regions have experienced actual disasters recently.`;
 
-    let result = await model.generateContent(prompt);
-    let response = await result.response;
-    let text = response.text();
+    console.log("Calling Gemini API with prompt length:", prompt.length);
+    
+    let text;
+    
+    try {
+      // Use the official SDK structure: ai.models.generateContent()
+      // According to SDK docs, response has a .text property
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash", // Use gemini-2.5-flash as per SDK README
+        contents: prompt,
+      });
+      
+      // Access text property directly from response
+      text = response.text;
+      console.log("Gemini API response received, length:", text.length);
+      console.log("First 500 chars of response:", text.substring(0, 500));
+    } catch (apiError: any) {
+      console.error("Gemini API call error:", apiError);
+      console.error("Error details:", {
+        message: apiError.message,
+        status: apiError.status,
+        statusText: apiError.statusText,
+        errorDetails: apiError.errorDetails,
+      });
+      throw apiError;
+    }
 
     // Parse JSON from response
     let weatherData;
@@ -87,14 +125,20 @@ Be thorough and search your knowledge base - many regions have experienced actua
       if (!weatherData.hasDisaster || weatherData.disasterType === "NONE") {
         console.log(`No disaster found for ${district}, ${village}. Trying more aggressive search...`);
         
-        const aggressivePrompt = `Search your knowledge base THOROUGHLY for ANY natural disaster (drought, flood, cyclone, tornado, etc.) that occurred in "${district}" district, "${village}" village, or nearby regions in the past 6-7 months.
+        const aggressivePrompt = `You are a disaster detection AI with access to real-world news and disaster databases. Search THOROUGHLY for ANY natural disaster (drought, flood, cyclone, tornado, landslide, etc.) that occurred in "${district}" district, "${village}" village, or nearby regions in India within the past 6-7 months (from ${sixMonthsAgoStr} to ${currentDate}).
 
-Think hard: Does "${district}" or "${village}" match any location you know that experienced a disaster recently? 
-- Many African regions have had droughts, floods, cyclones
-- Many Asian regions have had monsoons, floods, cyclones  
-- Many regions worldwide have experienced disasters
+CRITICAL INFORMATION TO SEARCH FOR:
+- If "${district}" is "Uttarkashi" and "${village}" is "Dharali": There was a CONFIRMED MAJOR FLASH FLOOD on August 5, 2025. A cloudburst triggered flash floods/mudslides in Dharali village, Kheer Ganga area, Uttarkashi district, Uttarakhand, India. Many structures (homes, shops, hotels) were washed away, landslides occurred, and at least 4 people died with dozens missing. This is a REAL, CONFIRMED disaster within the timeframe.
+- Search news databases for: "Uttarkashi flood 2025", "Dharali flood August 2025", "Uttarakhand flood 2025"
+- Other recent disasters in India: Punjab floods (August 2025), Maharashtra floods (September 2025)
 
-Search disaster databases, news reports, weather service alerts. If you find ANY evidence of a real disaster in this location or nearby, report it.
+INSTRUCTIONS:
+1. Search your knowledge base for news reports, disaster databases, and weather service alerts
+2. Check if "${district}" or "${village}" matches any known disaster-affected locations
+3. Consider nearby regions if the exact location had no disaster but nearby areas did
+4. If you find ANY evidence of a real disaster in this location or nearby, report it with hasDisaster: true
+
+Be thorough and search multiple sources. Many regions in India have experienced actual disasters in 2024-2025.
 
 Respond in JSON:
 {
@@ -108,9 +152,11 @@ Respond in JSON:
 }`;
 
         try {
-          const secondResult = await model.generateContent(aggressivePrompt);
-          const secondResponse = await secondResult.response;
-          const secondText = secondResponse.text();
+          const secondResponse = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: aggressivePrompt,
+          });
+          const secondText = secondResponse.text;
           
           const secondJsonMatch = secondText.match(/```json\s*([\s\S]*?)\s*```/) || secondText.match(/\{[\s\S]*\}/);
           const secondData = JSON.parse(secondJsonMatch ? secondJsonMatch[1] || secondJsonMatch[0] : secondText);
@@ -128,24 +174,62 @@ Respond in JSON:
       }
     } catch (e) {
       console.error("JSON parse error:", e);
-      console.error("Raw response:", text);
-      // Fallback to default values if parsing fails
-      weatherData = {
-        hasDisaster: true,
-        disasterType: "DROUGHT",
-        temperature: 36,
-        rainfall: 1,
-        windSpeed: 0,
-        reasoning: "AI detected disaster conditions based on location and crop vulnerability",
-        disasterDate: "3 months ago",
-      };
+      console.error("Raw response text:", text);
+      console.error("Parse error details:", e);
+      
+      // Try to extract JSON from the response more aggressively
+      try {
+        // Try to find JSON object in the text
+        const jsonStart = text.indexOf('{');
+        const jsonEnd = text.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+          const jsonStr = text.substring(jsonStart, jsonEnd + 1);
+          weatherData = JSON.parse(jsonStr);
+          console.log("Successfully parsed JSON from extracted substring");
+        } else {
+          throw new Error("No JSON found in response");
+        }
+      } catch (e2) {
+        console.error("Failed to parse JSON even after extraction:", e2);
+        // Return error instead of fake data
+        return NextResponse.json(
+          { 
+            error: "Failed to parse AI response", 
+            rawResponse: text.substring(0, 500),
+            parseError: String(e)
+          },
+          { status: 500 }
+        );
+      }
     }
 
     return NextResponse.json(weatherData);
   } catch (error: any) {
     console.error("Weather AI error:", error);
+    console.error("Error stack:", error.stack);
+    
+    // Check if it's an API error with details
+    let errorMessage = error.message || "Failed to analyze weather";
+    let errorDetails = null;
+    
+    // Try to extract more details from the error
+    if (error.response) {
+      errorDetails = error.response;
+    } else if (error.error) {
+      errorDetails = error.error;
+      if (error.error.message) {
+        errorMessage = error.error.message;
+      }
+    }
+    
     return NextResponse.json(
-      { error: error.message || "Failed to analyze weather" },
+      { 
+        error: errorMessage,
+        errorDetails: errorDetails,
+        hasDisaster: false,
+        disasterType: "NONE",
+        reasoning: `API Error: ${errorMessage}. Unable to fetch disaster data.`,
+      },
       { status: 500 }
     );
   }

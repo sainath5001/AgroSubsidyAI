@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
@@ -27,32 +27,32 @@ export async function POST(request: NextRequest) {
 
     console.log(`Geocoding: ${village}, ${district}`);
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    
-    // Try gemini-1.5-flash first (faster, cheaper), fallback to gemini-1.5-pro
-    let model;
-    try {
-      model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    } catch (e) {
-      console.log("Falling back to gemini-1.5-pro");
-      model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-    }
+    const ai = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+    });
 
     const prompt = `You are a geocoding AI. Given a district "${district}" and village "${village}" in India, provide the approximate latitude and longitude coordinates.
 
+IMPORTANT SPECIFIC LOCATIONS:
+- If district is "Uttarkashi" and village is "Dharali": Use coordinates approximately 30.7°N, 78.4°E (Uttarkashi district, Uttarakhand, India)
+- If district is "Uttarkashi": Use coordinates approximately 30.7°N, 78.4°E (Uttarkashi district center, Uttarakhand, India)
+- For other locations: Provide accurate coordinates for the district/village in India
+
 IMPORTANT: Respond ONLY with valid JSON, no markdown, no code blocks, just the JSON object:
 {
-  "latitude": 28.6139,
-  "longitude": 77.1234,
+  "latitude": 30.7,
+  "longitude": 78.4,
   "location": "village, district"
 }
 
-If you cannot find the exact location, provide coordinates for the district center. Make sure the coordinates are valid numbers.`;
+Make sure the coordinates are valid numbers and correspond to the correct location in India.`;
 
     console.log("Calling Gemini API...");
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+    const text = response.text;
     
     console.log("Gemini response:", text);
 
@@ -100,15 +100,17 @@ If you cannot find the exact location, provide coordinates for the district cent
         console.log("Extracted coordinates from text:", geocodeData);
       } else {
         // Final fallback: Use district-based coordinates
-        // Ghaziabad is near Delhi, so use approximate coordinates
         const defaultCoords: Record<string, { lat: number; lon: number }> = {
           ghaziabad: { lat: 28.6692, lon: 77.4538 },
           baghpat: { lat: 28.9444, lon: 77.2181 },
           delhi: { lat: 28.6139, lon: 77.2090 },
+          uttarkashi: { lat: 30.7308, lon: 78.4494 }, // Correct coordinates for Uttarkashi, Uttarakhand
+          "uttar kashi": { lat: 30.7308, lon: 78.4494 },
+          "uttarkashi district": { lat: 30.7308, lon: 78.4494 },
         };
 
-        const districtLower = district.toLowerCase();
-        const coords = defaultCoords[districtLower] || defaultCoords.delhi;
+        const districtLower = district.toLowerCase().replace(/\s+/g, ""); // Remove spaces for matching
+        const coords = defaultCoords[districtLower] || defaultCoords[district.toLowerCase()] || defaultCoords.delhi;
         
         geocodeData = {
           latitude: coords.lat,
@@ -129,10 +131,13 @@ If you cannot find the exact location, provide coordinates for the district cent
       ghaziabad: { lat: 28.6692, lon: 77.4538 },
       baghpat: { lat: 28.9444, lon: 77.2181 },
       delhi: { lat: 28.6139, lon: 77.2090 },
+      uttarkashi: { lat: 30.7308, lon: 78.4494 }, // Correct coordinates for Uttarkashi, Uttarakhand
+      "uttar kashi": { lat: 30.7308, lon: 78.4494 },
+      "uttarkashi district": { lat: 30.7308, lon: 78.4494 },
     };
 
-    const districtLower = district.toLowerCase();
-    const coords = defaultCoords[districtLower] || defaultCoords.delhi;
+    const districtLower = district.toLowerCase().replace(/\s+/g, ""); // Remove spaces for matching
+    const coords = defaultCoords[districtLower] || defaultCoords[district.toLowerCase()] || defaultCoords.delhi;
     
     return NextResponse.json({
       latitude: coords.lat,

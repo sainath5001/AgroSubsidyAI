@@ -114,7 +114,7 @@ export function AutonomousWorkflow() {
   // Use store getter function to avoid dependency issues
   const getCurrentFarmer = () => useWorkflowStore.getState().currentFarmer;
 
-  const [phase, setPhase] = useState<WorkflowPhase>("deposit");
+  const [phase, setPhase] = useState<WorkflowPhase>("register");
   const [depositAmount, setDepositAmount] = useState("");
   const [form, setForm] = useState<FarmerForm>(initialForm);
   const [aiActive, setAiActive] = useState(false);
@@ -506,6 +506,16 @@ export function AutonomousWorkflow() {
         });
 
         const weatherData = await weatherResponse.json();
+        
+        console.log("Weather API response:", weatherData);
+        console.log("Weather API response status:", weatherResponse.status);
+
+        if (!weatherResponse.ok || weatherData.error) {
+          const errorMsg = weatherData.error || `HTTP ${weatherResponse.status}`;
+          console.error("Weather API error:", errorMsg);
+          addAIActivity("analysis", `Weather API error: ${typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg)}`);
+          // Continue to eligibility score calculation even on error
+        }
 
         if (weatherData.hasDisaster && weatherData.disasterType !== "NONE") {
           // Map disaster types to contract flags
@@ -526,7 +536,7 @@ export function AutonomousWorkflow() {
           
           // Type out weather data with animation
           const windSpeedText = weatherData.windSpeed ? `\nWind Speed: ${weatherData.windSpeed} km/h` : "";
-          const weatherText = `Region: ${currentFarmer.district}\nTemperature: ${weatherData.temperature}°C\nRainfall: ${weatherData.rainfall}mm${windSpeedText}\nDisaster Type: ${weatherData.disasterType}\nReasoning: ${weatherData.reasoning}`;
+          const weatherText = `Region: ${farmer.district}\nTemperature: ${weatherData.temperature}°C\nRainfall: ${weatherData.rainfall}mm${windSpeedText}\nDisaster Type: ${weatherData.disasterType}\nReasoning: ${weatherData.reasoning}`;
           
           let typedText = "";
           for (let i = 0; i < weatherText.length; i++) {
@@ -535,10 +545,10 @@ export function AutonomousWorkflow() {
             setTypingWeather(typedText);
           }
 
-          const currentFarmer = useWorkflowStore.getState().currentFarmer;
-          if (currentFarmer) {
+          // Use farmer variable that's already defined
+          if (farmer) {
             setWeatherForm({
-              region: currentFarmer.district,
+              region: farmer.district,
               temperature: weatherData.temperature.toString(),
               rainfall: weatherData.rainfall.toString(),
               droughtAlert: finalDroughtAlert,
@@ -553,6 +563,17 @@ export function AutonomousWorkflow() {
             temperature: weatherData.temperature,
             rainfall: weatherData.rainfall,
             windSpeed: weatherData.windSpeed,
+          });
+
+          // Set HIGH eligibility score when disaster is detected
+          setEligibilityScore({
+            score: 9.5, // High eligibility score for disaster-affected farmers
+            reasoning: `Natural disaster (${weatherData.disasterType}) detected in ${farmer.district}, ${farmer.village}. ${weatherData.reasoning || "This farmer qualifies for subsidy assistance."}`,
+            factors: [
+              `Disaster type: ${weatherData.disasterType}`,
+              `Location: ${farmer.district}, ${farmer.village}`,
+              weatherData.disasterDate ? `Disaster date: ${weatherData.disasterDate}` : "Recent disaster within 6-7 months",
+            ],
           });
 
           // Record weather on-chain
@@ -570,11 +591,11 @@ export function AutonomousWorkflow() {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 farmerData: {
-                  district: currentFarmer.district,
-                  village: currentFarmer.village,
-                  cropType: currentFarmer.cropType,
-                  latitude: currentFarmer.latitude,
-                  longitude: currentFarmer.longitude,
+                  district: farmer.district,
+                  village: farmer.village,
+                  cropType: farmer.cropType,
+                  latitude: farmer.latitude,
+                  longitude: farmer.longitude,
                 },
                 weatherData: {
                   temperature: weatherData.temperature,
@@ -1179,7 +1200,9 @@ export function AutonomousWorkflow() {
               <div className="bg-slate-900/50 rounded-xl p-6 border border-slate-700/50">
                 <div className="flex items-center justify-between mb-4">
                   <div className="text-sm text-slate-400">Eligibility Score</div>
-                  <div className="text-4xl font-bold text-yellow-400">{eligibilityScore.score.toFixed(1)}/10</div>
+                  <div className={`text-4xl font-bold ${eligibilityScore.score >= 5 ? "text-emerald-400" : "text-yellow-400"}`}>
+                    {eligibilityScore.score.toFixed(1)}/10
+                  </div>
                 </div>
                 <div className="w-full bg-slate-800 rounded-full h-3 mb-4">
                   <motion.div
@@ -1203,10 +1226,17 @@ export function AutonomousWorkflow() {
                   </div>
                 )}
               </div>
-              <div className="text-sm text-slate-400 bg-slate-900/50 p-4 rounded-lg">
-                <strong>Note:</strong> This farmer has a low eligibility score ({eligibilityScore.score.toFixed(1)}/10) as no natural disaster was detected in their region within the past 6-7 months. 
-                Subsidies are only available when natural disasters occur within this recent timeframe (last 6-7 months).
-              </div>
+              {eligibilityScore.score < 5 ? (
+                <div className="text-sm text-slate-400 bg-slate-900/50 p-4 rounded-lg">
+                  <strong>Note:</strong> This farmer has a low eligibility score ({eligibilityScore.score.toFixed(1)}/10) as no natural disaster was detected in their region within the past 6-7 months. 
+                  Subsidies are only available when natural disasters occur within this recent timeframe (last 6-7 months).
+                </div>
+              ) : (
+                <div className="text-sm text-emerald-400 bg-emerald-500/10 p-4 rounded-lg border border-emerald-500/30">
+                  <strong>✓ Eligible for Subsidy:</strong> This farmer has a high eligibility score ({eligibilityScore.score.toFixed(1)}/10) as a natural disaster was detected in their region within the past 6-7 months. 
+                  They qualify for subsidy assistance.
+                </div>
+              )}
               <button
                 onClick={resetWorkflow}
                 className="w-full mt-4 px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-xl text-white font-medium transition-all shadow-lg"
@@ -1456,7 +1486,7 @@ export function AutonomousWorkflow() {
                       <div>
                         <div className="text-xs text-slate-500 mb-1">Crop Type</div>
                         <div className="text-sm text-white">
-                          {CROP_TYPES.find(c => c.value === farmer.cropType)?.label || "Unknown"}
+                          {cropOptions.find(c => c.value === farmer.cropType)?.label || "Unknown"}
                         </div>
                       </div>
                       {farmer.registrationTxHash && (
@@ -1474,44 +1504,6 @@ export function AutonomousWorkflow() {
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Registration Criteria Info */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-6 p-6 rounded-2xl border border-blue-500/30 bg-blue-500/10 backdrop-blur-sm"
-        >
-          <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <StarIcon className="w-5 h-5 text-blue-400" />
-            Registration Criteria
-          </h3>
-          <div className="grid md:grid-cols-2 gap-4 text-sm">
-            <div>
-              <div className="text-slate-300 font-medium mb-2">Required Fields (On-Chain):</div>
-              <ul className="space-y-1 text-slate-400">
-                <li>✓ Land Proof Hash (non-empty)</li>
-                <li>✓ District (non-empty)</li>
-                <li>✓ Village (non-empty)</li>
-                <li>✓ Crop Type (enum value)</li>
-                <li>✓ Wallet must not be already registered</li>
-              </ul>
-            </div>
-            <div>
-              <div className="text-slate-300 font-medium mb-2">Required Fields (Frontend):</div>
-              <ul className="space-y-1 text-slate-400">
-                <li>✓ Recipient Address (for subsidy payments)</li>
-                <li>✓ Latitude & Longitude (auto-fetched by AI)</li>
-                <li>✓ All on-chain requirements above</li>
-              </ul>
-            </div>
-          </div>
-          <div className="mt-4 p-3 rounded-lg bg-slate-900/50 border border-slate-700/50">
-            <div className="text-xs text-slate-400">
-              <strong>Note:</strong> Once registered, a farmer cannot register again with the same wallet address. 
-              They can update their profile using the <code className="text-purple-400">updateProfile()</code> function.
-            </div>
-          </div>
-        </motion.div>
       </div>
     </section>
   );
