@@ -8,6 +8,9 @@ import {
   useWaitForTransactionReceipt,
   useChainId,
   useBalance,
+  useConnect,
+  useDisconnect,
+  useSwitchChain,
 } from "wagmi";
 import { sepolia } from "wagmi/chains";
 import { parseEther, formatEther } from "viem";
@@ -115,6 +118,9 @@ function useTypingAnimation(text: string, speed: number = 30) {
 export function AutonomousWorkflow() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
+  const { connectAsync, connectors, isPending: isConnecting } = useConnect();
+  const { disconnect } = useDisconnect();
+  const { switchChainAsync, isPending: isSwitching } = useSwitchChain();
   const { currentFarmer, addFarmer, updateFarmer, incrementSchemeNonce, farmers } = useWorkflowStore();
   const [showFarmersList, setShowFarmersList] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -182,6 +188,33 @@ export function AutonomousWorkflow() {
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // Wallet connection handler
+  const connectWallet = async () => {
+    const wallet = connectors?.[0];
+    if (!wallet) {
+      showToast("error", "No wallet found. Please install MetaMask.");
+      return;
+    }
+    try {
+      await connectAsync({ connector: wallet, chainId: sepolia.id });
+      showToast("success", "Wallet connected successfully!");
+    } catch (err: any) {
+      console.error("Connect error:", err);
+      showToast("error", err?.message || "Failed to connect wallet");
+    }
+  };
+
+  // Switch network handler
+  const switchToSepolia = async () => {
+    try {
+      await switchChainAsync?.({ chainId: sepolia.id });
+      showToast("success", "Switched to Sepolia testnet");
+    } catch (err: any) {
+      console.error("Switch chain error:", err);
+      showToast("error", err?.message || "Failed to switch network");
+    }
+  };
 
   // Weather recording
   const { writeContract: writeWeather, data: weatherTxHash } = useWriteContract();
@@ -1231,14 +1264,34 @@ export function AutonomousWorkflow() {
             {/* Connection Status */}
             {(!isConnected || chainId !== sepolia.id) && (
               <div className="mb-4 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30">
-                <div className="flex items-center gap-2 text-yellow-400 mb-2">
+                <div className="flex items-center gap-2 text-yellow-400 mb-3">
                   <InformationCircleIcon className="w-5 h-5" />
                   <span className="font-semibold">Connection Required</span>
                 </div>
-                <div className="text-sm text-slate-300 space-y-1">
-                  {!isConnected && <div>❌ Wallet not connected</div>}
+                <div className="text-sm text-slate-300 space-y-2">
+                  {!isConnected && (
+                    <>
+                      <div>❌ Wallet not connected</div>
+                      <button
+                        onClick={connectWallet}
+                        disabled={isConnecting}
+                        className="w-full mt-2 inline-flex items-center justify-center rounded-full bg-cyan-400 px-6 py-2.5 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {isConnecting ? "Connecting..." : "Connect Wallet"}
+                      </button>
+                    </>
+                  )}
                   {isConnected && chainId !== sepolia.id && (
-                    <div>❌ Wrong network. Please switch to Sepolia testnet (Chain ID: {sepolia.id})</div>
+                    <>
+                      <div>❌ Wrong network. Please switch to Sepolia testnet (Chain ID: {sepolia.id})</div>
+                      <button
+                        onClick={switchToSepolia}
+                        disabled={isSwitching}
+                        className="w-full mt-2 inline-flex items-center justify-center rounded-full bg-purple-500 px-6 py-2.5 font-semibold text-white transition hover:bg-purple-400 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {isSwitching ? "Switching..." : "Switch to Sepolia"}
+                      </button>
+                    </>
                   )}
                   {isConnected && chainId === sepolia.id && <div>✅ Ready to register</div>}
                 </div>
