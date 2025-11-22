@@ -18,7 +18,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "AgroSubsidyAI | Autonomous Subsidy Distribution",
   description:
-    "AI + blockchain agent that verifies farmers, tracks weather disasters, and releases subsidies instantly.",
+    "AI-powered blockchain agent that verifies farmers, detects natural disasters, and distributes subsidies instantly. No corruption. No waiting. Just automated relief when farmers need it most.",
 };
 
 export default function RootLayout({

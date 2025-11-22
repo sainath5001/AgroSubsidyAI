@@ -171,10 +171,17 @@ export function AutonomousWorkflow() {
   });
 
   // Registration
-  const { writeContract: writeRegister, data: registerTxHash } = useWriteContract();
-  const { isLoading: registerPending, isSuccess: registerSuccess } = useWaitForTransactionReceipt({
+  const { writeContract: writeRegister, data: registerTxHash, error: registerError, isError: isRegisterError, status: registerStatus } = useWriteContract();
+  const { isLoading: registerPending, isSuccess: registerSuccess, error: registerTxError } = useWaitForTransactionReceipt({
     hash: registerTxHash,
   });
+  
+  // Track if component is mounted (client-side only)
+  const [isMounted, setIsMounted] = useState(false);
+  
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Weather recording
   const { writeContract: writeWeather, data: weatherTxHash } = useWriteContract();
@@ -220,13 +227,12 @@ export function AutonomousWorkflow() {
   const { data: eligibilityDecision, refetch: refetchEligibility } = useReadContract({
     address: CONTRACT_ADDRESSES.eligibilityEngine,
     abi: ELIGIBILITY_ENGINE_ABI,
-    functionName: "getFarmerDecision",
-    args:
-      currentFarmer && weatherEventId
-        ? [currentFarmer.recipientAddress as `0x${string}`, BigInt(weatherEventId)]
-        : undefined,
+    functionName: "getLatestDecision",
+    args: currentFarmer
+      ? [currentFarmer.recipientAddress as `0x${string}`]
+      : undefined,
     query: {
-      enabled: !!currentFarmer && !!weatherEventId,
+      enabled: !!currentFarmer,
     },
   });
 
@@ -297,6 +303,25 @@ export function AutonomousWorkflow() {
       setPhase("register");
     }
   }, [depositSuccess, depositReceipt, depositTxHash, refetchBalance, refetchNativeBalance, depositAmount]);
+
+  // Handle registration errors
+  useEffect(() => {
+    if (isRegisterError && registerError) {
+      console.error("Registration error:", registerError);
+      const errorMessage = registerError.message || "Failed to register farmer";
+      showToast("error", `Registration failed: ${errorMessage}`);
+      hasProcessedRegistration.current = false;
+    }
+  }, [isRegisterError, registerError]);
+
+  // Handle transaction receipt errors
+  useEffect(() => {
+    if (registerTxError) {
+      console.error("Registration transaction error:", registerTxError);
+      showToast("error", `Transaction failed: ${registerTxError.message || "Unknown error"}`);
+      hasProcessedRegistration.current = false;
+    }
+  }, [registerTxError]);
 
   // After registration, save to store and start AI
   useEffect(() => {
@@ -518,8 +543,55 @@ export function AutonomousWorkflow() {
 
     addFarmer(farmerData);
 
+    // Validate wallet connection and network
+    if (!isConnected) {
+      showToast("error", "Please connect your wallet first");
+      return;
+    }
+
+    if (chainId !== sepolia.id) {
+      showToast("error", `Please switch to Sepolia testnet. Current chain: ${chainId}`);
+      return;
+    }
+
+    // Ensure we're on client side and writeRegister is available
+    if (!isMounted) {
+      showToast("error", "Please wait for the app to fully load");
+      return;
+    }
+
+    if (typeof writeRegister !== "function") {
+      console.error("writeRegister is not a function. Type:", typeof writeRegister, "Status:", registerStatus);
+      showToast("error", "Wallet connection not ready. Please ensure MetaMask is connected and try again.");
+      return;
+    }
+
+    // Additional check: ensure account is connected
+    if (!address || !isConnected) {
+      showToast("error", "Please connect your wallet first");
+      return;
+    }
+
+    // Log registration attempt
+    console.log("Attempting to register farmer:", {
+      address: CONTRACT_ADDRESSES.farmerRegistry,
+      args: [
+        form.landProofHash,
+        form.district,
+        form.village,
+        BigInt(Math.round(Number(form.latitude || 0) * 1_000_000)),
+        BigInt(Math.round(Number(form.longitude || 0) * 1_000_000)),
+        Number(form.cropType),
+      ],
+      chainId,
+      isConnected,
+      writeRegisterAvailable: !!writeRegister,
+      registerStatus,
+      isMounted,
+    });
+
     try {
-      writeRegister({
+      const result = writeRegister({
         address: CONTRACT_ADDRESSES.farmerRegistry,
         abi: FARMER_REGISTRY_ABI,
         functionName: "registerFarmer",
@@ -532,8 +604,24 @@ export function AutonomousWorkflow() {
           Number(form.cropType),
         ],
       });
-    } catch (error) {
+      console.log("Registration writeContract called successfully:", result);
+    } catch (error: any) {
       console.error("Registration error:", error);
+      const errorMessage = error?.message || error?.toString() || "Unknown error";
+      showToast("error", `Registration failed: ${errorMessage}`);
+      
+      // Log full error for debugging
+      if (typeof window !== "undefined" && (process.env.NODE_ENV === "development" || window.location.hostname.includes("vercel"))) {
+        console.error("Full registration error details:", {
+          error,
+          errorType: error?.constructor?.name,
+          errorStack: error?.stack,
+          writeRegisterType: typeof writeRegister,
+          isMounted,
+          isConnected,
+          chainId,
+        });
+      }
     }
   };
 
@@ -1139,6 +1227,44 @@ export function AutonomousWorkflow() {
                 </div>
               )}
             </div>
+            
+            {/* Connection Status */}
+            {(!isConnected || chainId !== sepolia.id) && (
+              <div className="mb-4 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30">
+                <div className="flex items-center gap-2 text-yellow-400 mb-2">
+                  <InformationCircleIcon className="w-5 h-5" />
+                  <span className="font-semibold">Connection Required</span>
+                </div>
+                <div className="text-sm text-slate-300 space-y-1">
+                  {!isConnected && <div>❌ Wallet not connected</div>}
+                  {isConnected && chainId !== sepolia.id && (
+                    <div>❌ Wrong network. Please switch to Sepolia testnet (Chain ID: {sepolia.id})</div>
+                  )}
+                  {isConnected && chainId === sepolia.id && <div>✅ Ready to register</div>}
+                </div>
+              </div>
+            )}
+
+            {/* Registration Errors */}
+            {(isRegisterError || registerTxError) && (
+              <div className="mb-4 p-4 rounded-xl bg-red-500/10 border border-red-500/30">
+                <div className="flex items-center gap-2 text-red-400 mb-2">
+                  <XCircleIcon className="w-5 h-5" />
+                  <span className="font-semibold">Registration Error</span>
+                </div>
+                <div className="text-sm text-slate-300">
+                  {registerError?.message || registerTxError?.message || "Unknown error occurred"}
+                </div>
+                {process.env.NODE_ENV === "development" && (
+                  <details className="mt-2 text-xs text-slate-400">
+                    <summary className="cursor-pointer">Debug Info</summary>
+                    <pre className="mt-2 p-2 bg-slate-900/50 rounded overflow-auto">
+                      {JSON.stringify({ registerError, registerTxError, chainId, isConnected }, null, 2)}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            )}
             <form onSubmit={handleRegister} className="space-y-5">
               <div className="grid md:grid-cols-2 gap-5">
                 <div>
