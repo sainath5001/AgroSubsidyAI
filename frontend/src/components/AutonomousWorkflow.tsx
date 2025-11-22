@@ -22,7 +22,14 @@ import {
   StarIcon,
   ArrowPathIcon,
   XCircleIcon,
+  MagnifyingGlassIcon,
+  FunnelIcon,
+  ChartBarIcon,
+  InformationCircleIcon,
 } from "@heroicons/react/24/outline";
+import { ToastContainer, type Toast } from "./ui/Toast";
+import { SkeletonCard, SkeletonText, SkeletonButton, SkeletonInput } from "./ui/SkeletonLoader";
+import { ProgressIndicator } from "./ui/ProgressIndicator";
 import {
   CONTRACT_ADDRESSES,
   SUBSIDY_DISTRIBUTOR_ABI,
@@ -110,9 +117,23 @@ export function AutonomousWorkflow() {
   const chainId = useChainId();
   const { currentFarmer, addFarmer, updateFarmer, incrementSchemeNonce, farmers } = useWorkflowStore();
   const [showFarmersList, setShowFarmersList] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [farmerSearchQuery, setFarmerSearchQuery] = useState("");
+  const [farmerFilterStatus, setFarmerFilterStatus] = useState<"all" | "eligible" | "ineligible">("all");
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   
   // Use store getter function to avoid dependency issues
   const getCurrentFarmer = () => useWorkflowStore.getState().currentFarmer;
+
+  // Toast notification helper
+  const showToast = (type: Toast["type"], message: string, duration?: number) => {
+    const id = Math.random().toString(36).substring(7);
+    setToasts((prev) => [...prev, { id, type, message, duration }]);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
 
   const [phase, setPhase] = useState<WorkflowPhase>("register");
   const [depositAmount, setDepositAmount] = useState("");
@@ -275,7 +296,7 @@ export function AutonomousWorkflow() {
       // Set phase to register immediately to show form
       setPhase("register");
     }
-  }, [depositSuccess, depositReceipt, depositTxHash, refetchBalance, refetchNativeBalance]);
+  }, [depositSuccess, depositReceipt, depositTxHash, refetchBalance, refetchNativeBalance, depositAmount]);
 
   // After registration, save to store and start AI
   useEffect(() => {
@@ -288,6 +309,7 @@ export function AutonomousWorkflow() {
         // Update farmer as registered (only once)
         updateFarmer({ registered: true, registrationTxHash: registerTxHash });
         refetchFarmers();
+        showToast("success", `Farmer registered successfully! AI is now analyzing...`);
         setTimeout(() => {
           setPhase("monitoring");
           if (!hasStartedAI.current) {
@@ -336,6 +358,8 @@ export function AutonomousWorkflow() {
     if (paymentSuccess) {
       setProcessedPayments((prev) => prev + 1);
       setPhase("complete");
+      const farmer = getCurrentFarmer();
+      showToast("success", `Payment executed! Subsidy sent to ${farmer?.recipientAddress?.slice(0, 6)}...${farmer?.recipientAddress?.slice(-4)}`);
       addAIActivity("execution", "Payment executed successfully. Subsidy sent to farmer wallet.", {
         txHash: paymentTxHash,
       });
@@ -343,9 +367,12 @@ export function AutonomousWorkflow() {
   }, [paymentSuccess, paymentTxHash]);
 
   const handleDeposit = async () => {
-    if (!depositAmount || parseFloat(depositAmount) <= 0) return;
+    if (!depositAmount || parseFloat(depositAmount) <= 0) {
+      showToast("warning", "Please enter a valid deposit amount");
+      return;
+    }
     if (!isConnected || chainId !== sepolia.id) {
-      alert("Please connect wallet and switch to Sepolia");
+      showToast("error", "Please connect wallet and switch to Sepolia testnet");
       return;
     }
 
@@ -437,9 +464,45 @@ export function AutonomousWorkflow() {
     }
   }, [form.district, form.village, form.latitude, form.fetchingCoords]);
 
+  // Form validation
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+    
+    if (!form.recipientAddress || !form.recipientAddress.startsWith("0x") || form.recipientAddress.length !== 42) {
+      errors.recipientAddress = "Please enter a valid Ethereum address (0x...)";
+    }
+    
+    if (!form.landProofHash || form.landProofHash.trim().length === 0) {
+      errors.landProofHash = "Land proof hash is required";
+    }
+    
+    if (!form.district || form.district.trim().length === 0) {
+      errors.district = "District is required";
+    }
+    
+    if (!form.village || form.village.trim().length === 0) {
+      errors.village = "Village is required";
+    }
+    
+    if (!form.latitude || !form.longitude) {
+      errors.coordinates = "Please fetch coordinates by entering district and village";
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isConnected || !address) return;
+    if (!isConnected || !address) {
+      showToast("error", "Please connect your wallet first");
+      return;
+    }
+
+    if (!validateForm()) {
+      showToast("warning", "Please fix the form errors before submitting");
+      return;
+    }
 
     const farmerData: FarmerData = {
       wallet: address,
@@ -815,17 +878,54 @@ export function AutonomousWorkflow() {
     // The form will show again because phase is "register" and we check for that
   };
 
+  // Calculate workflow progress
+  const workflowSteps = [
+    { id: "deposit", label: "Fund Pool", completed: depositSuccess, active: phase === "deposit" },
+    { id: "register", label: "Register", completed: registerSuccess, active: phase === "register" || phase === "monitoring" },
+    { id: "processing", label: "AI Process", completed: phase === "complete", active: phase === "processing" || aiActive },
+  ];
+  const currentStepIndex = workflowSteps.findIndex((s) => s.active) >= 0 ? workflowSteps.findIndex((s) => s.active) : 0;
+
+  // Filter farmers based on search and status
+  const filteredFarmers = farmers.filter((farmer) => {
+    const matchesSearch = 
+      farmer.district.toLowerCase().includes(farmerSearchQuery.toLowerCase()) ||
+      farmer.village.toLowerCase().includes(farmerSearchQuery.toLowerCase()) ||
+      farmer.recipientAddress?.toLowerCase().includes(farmerSearchQuery.toLowerCase());
+    
+    const matchesStatus = 
+      farmerFilterStatus === "all" ||
+      (farmerFilterStatus === "eligible" && farmer.registered) ||
+      (farmerFilterStatus === "ineligible" && !farmer.registered);
+    
+    return matchesSearch && matchesStatus;
+  });
+
+  // Calculate statistics
+  const stats = {
+    totalFarmers: farmers.length,
+    registeredFarmers: farmers.filter((f) => f.registered).length,
+    eligibleFarmers: farmers.filter((f) => f.registered && eligibilityScore && eligibilityScore.score >= 5).length,
+    totalPayments: processedPayments,
+  };
+
   return (
-    <section className="relative py-24 px-4 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+    <section className="relative py-24 px-4 bg-gradient-to-b from-slate-50 via-slate-100 to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 min-h-screen transition-colors duration-300">
       <div className="max-w-7xl mx-auto">
+        {/* Toast Notifications */}
+        <ToastContainer toasts={toasts} onRemove={removeToast} />
+
         {/* Header */}
-        <div className="text-center mb-12">
+        <div className="text-center mb-8">
           <h2 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
             Autonomous Subsidy Distribution
           </h2>
-          <p className="text-xl text-slate-400 max-w-3xl mx-auto">
+          <p className="text-xl text-slate-600 dark:text-slate-400 max-w-3xl mx-auto mb-6">
             Deposit funds, register farmers, and let AI handle the rest—completely autonomously
           </p>
+          
+          {/* Progress Indicator */}
+          <ProgressIndicator steps={workflowSteps} currentStep={currentStepIndex} />
         </div>
 
         {/* Workflow Steps */}
@@ -834,10 +934,10 @@ export function AutonomousWorkflow() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`relative p-6 rounded-2xl border-2 transition-all backdrop-blur-sm ${
+                className={`relative p-6 rounded-2xl border-2 transition-all backdrop-blur-sm ${
               phase === "deposit"
                 ? "border-blue-500/50 bg-blue-500/10 shadow-lg shadow-blue-500/20"
-                : "border-slate-700/50 bg-slate-800/30"
+                : "border-slate-300/50 dark:border-slate-700/50 bg-white/50 dark:bg-slate-800/30"
             }`}
           >
             <div className="flex items-center gap-3 mb-4">
@@ -858,23 +958,36 @@ export function AutonomousWorkflow() {
             {!depositSuccess ? (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">Amount (ETH)</label>
+                  <label className="block text-sm text-slate-400 mb-2" htmlFor="deposit-amount">
+                    Amount (ETH)
+                  </label>
                   <input
+                    id="deposit-amount"
                     type="number"
                     step="0.0001"
+                    min="0"
                     value={depositAmount}
                     onChange={(e) => setDepositAmount(e.target.value)}
                     placeholder="0.0005"
-                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full px-4 py-3 bg-white dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
                     disabled={depositPending}
+                    aria-label="Deposit amount in ETH"
                   />
                 </div>
                 <button
                   onClick={handleDeposit}
                   disabled={!isConnected || chainId !== sepolia.id || depositPending || !depositAmount}
-                  className="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 rounded-xl text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                  className="w-full px-4 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 rounded-xl text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl touch-manipulation min-h-[48px]"
+                  aria-label={depositPending ? "Processing deposit..." : "Deposit to contract"}
                 >
-                  {depositPending ? "Processing..." : "Deposit to Contract"}
+                  {depositPending ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <ArrowPathIcon className="w-5 h-5 animate-spin" />
+                      Processing...
+                    </span>
+                  ) : (
+                    "Deposit to Contract"
+                  )}
                 </button>
               </div>
             ) : (
@@ -958,7 +1071,7 @@ export function AutonomousWorkflow() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
             className={`relative p-6 rounded-2xl border-2 transition-all backdrop-blur-sm ${
-              aiActive ? "border-pink-500/50 bg-pink-500/10 shadow-lg shadow-pink-500/20" : "border-slate-700/50 bg-slate-800/30"
+              aiActive ? "border-pink-500/50 bg-pink-500/10 shadow-lg shadow-pink-500/20" : "border-slate-300/50 dark:border-slate-700/50 bg-white/50 dark:bg-slate-800/30"
             }`}
           >
             <div className="flex items-center gap-3 mb-4">
@@ -1010,10 +1123,10 @@ export function AutonomousWorkflow() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="relative p-8 rounded-2xl border border-slate-700/50 bg-slate-800/30 backdrop-blur-sm mb-8"
+            className="relative p-8 rounded-2xl border border-slate-300/50 dark:border-slate-700/50 bg-white/50 dark:bg-slate-800/30 backdrop-blur-sm mb-8 transition-colors duration-300"
           >
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-2xl font-semibold text-white flex items-center gap-2">
+              <h3 className="text-2xl font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <UserGroupIcon className="w-6 h-6 text-purple-400" />
                 Register Farmer
               </h3>
@@ -1026,49 +1139,122 @@ export function AutonomousWorkflow() {
             <form onSubmit={handleRegister} className="space-y-5">
               <div className="grid md:grid-cols-2 gap-5">
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">Recipient Address</label>
+                  <label className="block text-sm text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1">
+                    Recipient Address <span className="text-red-400">*</span>
+                    <InformationCircleIcon className="w-4 h-4 text-slate-500" title="Ethereum address to receive subsidy payments" />
+                  </label>
                   <input
                     type="text"
                     required
                     value={form.recipientAddress}
-                    onChange={(e) => handleFormChange("recipientAddress", e.target.value)}
+                    onChange={(e) => {
+                      handleFormChange("recipientAddress", e.target.value);
+                      if (formErrors.recipientAddress) {
+                        setFormErrors((prev) => ({ ...prev, recipientAddress: "" }));
+                      }
+                    }}
                     placeholder="0x..."
-                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+                    className={`w-full px-4 py-3 bg-slate-900/50 border rounded-xl text-white focus:outline-none focus:ring-2 transition-all ${
+                      formErrors.recipientAddress
+                        ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                        : "border-slate-700 focus:border-purple-500 focus:ring-purple-500/20"
+                    }`}
+                    aria-invalid={!!formErrors.recipientAddress}
+                    aria-describedby={formErrors.recipientAddress ? "recipient-error" : undefined}
                   />
+                  {formErrors.recipientAddress && (
+                    <p id="recipient-error" className="text-xs text-red-400 mt-1 flex items-center gap-1">
+                      <XCircleIcon className="w-3 h-3" /> {formErrors.recipientAddress}
+                    </p>
+                  )}
                   <p className="text-xs text-slate-500 mt-1">Address to receive subsidy payments</p>
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">Land Proof Hash</label>
+                  <label className="block text-sm text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1">
+                    Land Proof Hash <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="text"
                     required
                     value={form.landProofHash}
-                    onChange={(e) => handleFormChange("landProofHash", e.target.value)}
+                    onChange={(e) => {
+                      handleFormChange("landProofHash", e.target.value);
+                      if (formErrors.landProofHash) {
+                        setFormErrors((prev) => ({ ...prev, landProofHash: "" }));
+                      }
+                    }}
                     placeholder="ipfs://hash or doc ref"
-                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+                    className={`w-full px-4 py-3 bg-slate-900/50 border rounded-xl text-white focus:outline-none focus:ring-2 transition-all ${
+                      formErrors.landProofHash
+                        ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                        : "border-slate-700 focus:border-purple-500 focus:ring-purple-500/20"
+                    }`}
+                    aria-invalid={!!formErrors.landProofHash}
+                    aria-describedby={formErrors.landProofHash ? "landproof-error" : undefined}
                   />
+                  {formErrors.landProofHash && (
+                    <p id="landproof-error" className="text-xs text-red-400 mt-1 flex items-center gap-1">
+                      <XCircleIcon className="w-3 h-3" /> {formErrors.landProofHash}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">District</label>
+                  <label className="block text-sm text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1">
+                    District <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="text"
                     required
                     value={form.district}
-                    onChange={(e) => handleFormChange("district", e.target.value)}
-                    placeholder="Baghpat"
-                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+                    onChange={(e) => {
+                      handleFormChange("district", e.target.value);
+                      if (formErrors.district) {
+                        setFormErrors((prev) => ({ ...prev, district: "" }));
+                      }
+                    }}
+                    placeholder="e.g., Uttarkashi"
+                    className={`w-full px-4 py-3 bg-slate-900/50 border rounded-xl text-white focus:outline-none focus:ring-2 transition-all ${
+                      formErrors.district
+                        ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                        : "border-slate-700 focus:border-purple-500 focus:ring-purple-500/20"
+                    }`}
+                    aria-invalid={!!formErrors.district}
+                    aria-describedby={formErrors.district ? "district-error" : undefined}
                   />
+                  {formErrors.district && (
+                    <p id="district-error" className="text-xs text-red-400 mt-1 flex items-center gap-1">
+                      <XCircleIcon className="w-3 h-3" /> {formErrors.district}
+                    </p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">Village</label>
+                  <label className="block text-sm text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1">
+                    Village <span className="text-red-400">*</span>
+                  </label>
                   <input
                     type="text"
                     required
                     value={form.village}
-                    onChange={(e) => handleFormChange("village", e.target.value)}
-                    placeholder="Naurangabad"
-                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+                    onChange={(e) => {
+                      handleFormChange("village", e.target.value);
+                      if (formErrors.village) {
+                        setFormErrors((prev) => ({ ...prev, village: "" }));
+                      }
+                    }}
+                    placeholder="e.g., Dharali"
+                    className={`w-full px-4 py-3 bg-slate-900/50 border rounded-xl text-white focus:outline-none focus:ring-2 transition-all ${
+                      formErrors.village
+                        ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                        : "border-slate-700 focus:border-purple-500 focus:ring-purple-500/20"
+                    }`}
+                    aria-invalid={!!formErrors.village}
+                    aria-describedby={formErrors.village ? "village-error" : undefined}
                   />
+                  {formErrors.village && (
+                    <p id="village-error" className="text-xs text-red-400 mt-1 flex items-center gap-1">
+                      <XCircleIcon className="w-3 h-3" /> {formErrors.village}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm text-slate-400 mb-2 flex items-center gap-2">
@@ -1146,13 +1332,34 @@ export function AutonomousWorkflow() {
                   </select>
                 </div>
               </div>
-              <button
-                type="submit"
-                disabled={!isConnected || registerPending || !form.latitude || !form.longitude}
-                className="w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-xl text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
-              >
-                {registerPending ? "Registering..." : "Register Farmer"}
-              </button>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm(initialForm);
+                    setFormErrors({});
+                  }}
+                  className="px-6 py-3 bg-slate-700/50 hover:bg-slate-700 rounded-xl text-white font-medium transition-all border border-slate-600 touch-manipulation min-h-[48px]"
+                  aria-label="Clear form"
+                >
+                  Clear Form
+                </button>
+                <button
+                  type="submit"
+                  disabled={registerPending || !isConnected}
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-xl text-white font-semibold text-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl touch-manipulation min-h-[48px]"
+                  aria-label={registerPending ? "Registering farmer..." : "Register farmer"}
+                >
+                  {registerPending ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <ArrowPathIcon className="w-5 h-5 animate-spin" />
+                      Registering...
+                    </span>
+                  ) : (
+                    "Register Farmer"
+                  )}
+                </button>
+              </div>
             </form>
           </motion.div>
         )}
@@ -1162,10 +1369,10 @@ export function AutonomousWorkflow() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="relative p-8 rounded-2xl border border-slate-700/50 bg-slate-800/30 backdrop-blur-sm mb-8"
+            className="relative p-8 rounded-2xl border border-slate-300/50 dark:border-slate-700/50 bg-white/50 dark:bg-slate-800/30 backdrop-blur-sm mb-8 transition-colors duration-300"
           >
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-2xl font-semibold text-white flex items-center gap-2">
+              <h3 className="text-2xl font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <CloudIcon className="w-6 h-6 text-blue-400" />
                 Weather Oracle Data (AI Generated)
               </h3>
@@ -1204,12 +1411,16 @@ export function AutonomousWorkflow() {
                     {eligibilityScore.score.toFixed(1)}/10
                   </div>
                 </div>
-                <div className="w-full bg-slate-800 rounded-full h-3 mb-4">
+                <div className="w-full bg-slate-800 rounded-full h-3 mb-4 overflow-hidden">
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${(eligibilityScore.score / 10) * 100}%` }}
                     transition={{ duration: 1, ease: "easeOut" }}
-                    className="bg-gradient-to-r from-yellow-500 to-orange-500 h-3 rounded-full"
+                    className={`h-3 rounded-full ${
+                      eligibilityScore.score >= 5
+                        ? "bg-gradient-to-r from-emerald-500 to-teal-500"
+                        : "bg-gradient-to-r from-yellow-500 to-orange-500"
+                    }`}
                   />
                 </div>
                 <div className="text-sm text-slate-300 mb-3">
@@ -1252,7 +1463,7 @@ export function AutonomousWorkflow() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="relative p-8 rounded-2xl border border-slate-700/50 bg-slate-800/30 backdrop-blur-sm mb-8"
+            className="relative p-8 rounded-2xl border border-slate-300/50 dark:border-slate-700/50 bg-white/50 dark:bg-slate-800/30 backdrop-blur-sm mb-8 transition-colors duration-300"
           >
             <h3 className="text-2xl font-semibold text-white mb-6 flex items-center gap-2">
               <StarIcon className="w-6 h-6 text-yellow-400" />
@@ -1284,7 +1495,7 @@ export function AutonomousWorkflow() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="relative p-8 rounded-2xl border border-slate-700/50 bg-slate-800/30 backdrop-blur-sm mb-8"
+            className="relative p-8 rounded-2xl border border-slate-300/50 dark:border-slate-700/50 bg-white/50 dark:bg-slate-800/30 backdrop-blur-sm mb-8 transition-colors duration-300"
           >
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -1375,24 +1586,72 @@ export function AutonomousWorkflow() {
           </motion.div>
         )}
 
+        {/* Statistics Dashboard */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="grid md:grid-cols-4 gap-4 mb-8"
+        >
+          <div className="relative p-6 rounded-2xl border border-slate-700/50 bg-gradient-to-br from-blue-500/10 to-blue-600/5 backdrop-blur-sm hover:border-blue-500/50 transition-all group">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm text-slate-400 font-medium">Total Farmers</div>
+              <UserGroupIcon className="w-5 h-5 text-blue-400 group-hover:scale-110 transition-transform" />
+            </div>
+            <div className="text-3xl font-bold text-white mb-1">{stats.totalFarmers}</div>
+            <div className="text-xs text-slate-500">Registered in system</div>
+          </div>
+
+          <div className="relative p-6 rounded-2xl border border-slate-700/50 bg-gradient-to-br from-purple-500/10 to-purple-600/5 backdrop-blur-sm hover:border-purple-500/50 transition-all group">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm text-slate-400 font-medium">Registered</div>
+              <CheckCircleIcon className="w-5 h-5 text-purple-400 group-hover:scale-110 transition-transform" />
+            </div>
+            <div className="text-3xl font-bold text-white mb-1">{stats.registeredFarmers}</div>
+            <div className="text-xs text-slate-500">On-chain registrations</div>
+          </div>
+
+          <div className="relative p-6 rounded-2xl border border-slate-700/50 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 backdrop-blur-sm hover:border-emerald-500/50 transition-all group">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm text-slate-400 font-medium">Eligible</div>
+              <StarIcon className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
+            </div>
+            <div className="text-3xl font-bold text-white mb-1">{stats.eligibleFarmers}</div>
+            <div className="text-xs text-slate-500">Qualified for subsidy</div>
+          </div>
+
+          <div className="relative p-6 rounded-2xl border border-slate-700/50 bg-gradient-to-br from-pink-500/10 to-pink-600/5 backdrop-blur-sm hover:border-pink-500/50 transition-all group">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm text-slate-400 font-medium">Payments</div>
+              <CurrencyDollarIcon className="w-5 h-5 text-pink-400 group-hover:scale-110 transition-transform" />
+            </div>
+            <div className="text-3xl font-bold text-white mb-1">{stats.totalPayments}</div>
+            <div className="text-xs text-slate-500">Processed successfully</div>
+          </div>
+        </motion.div>
+
         {/* System Status */}
-        <div className="grid md:grid-cols-4 gap-4">
-          <div className="relative p-4 rounded-xl border border-slate-700/50 bg-slate-800/30 backdrop-blur-sm">
+        <div className="grid md:grid-cols-4 gap-4 mb-8">
+          <div className="relative p-4 rounded-xl border border-slate-700/50 bg-slate-800/30 backdrop-blur-sm hover:border-slate-600/50 transition-all">
             <div className="flex items-center justify-between mb-1">
               <div className="text-sm text-slate-400">Contract Balance</div>
               <button
                 onClick={handleRefreshBalance}
                 disabled={isRefreshingBalance || balanceLoading}
-                className="p-1 rounded-lg bg-slate-700/50 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="p-1.5 rounded-lg bg-slate-700/50 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
                 title="Refresh balance"
+                aria-label="Refresh contract balance"
               >
                 <ArrowPathIcon
-                  className={`w-3.5 h-3.5 text-slate-300 ${isRefreshingBalance || balanceLoading ? "animate-spin" : ""}`}
+                  className={`w-4 h-4 text-slate-300 ${isRefreshingBalance || balanceLoading ? "animate-spin" : ""}`}
                 />
               </button>
             </div>
             <div className="text-2xl font-bold text-white">
-              {balanceLoading ? "Loading..." : parseFloat(contractBalance).toFixed(8)} ETH
+              {balanceLoading ? (
+                <SkeletonText lines={1} className="h-8" />
+              ) : (
+                parseFloat(contractBalance).toFixed(8)
+              )} ETH
             </div>
             {parseFloat(contractBalance) === 0 && depositSuccess && (
               <div className="text-xs text-yellow-400 mt-1">
@@ -1433,7 +1692,7 @@ export function AutonomousWorkflow() {
 
         {/* Registered Farmers List */}
         <AnimatePresence>
-          {showFarmersList && farmers.length > 0 && (
+          {showFarmersList && (
             <motion.div
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1443,24 +1702,64 @@ export function AutonomousWorkflow() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl font-semibold text-white flex items-center gap-2">
                   <UserGroupIcon className="w-5 h-5 text-purple-400" />
-                  Registered Farmers ({farmers.length})
+                  Registered Farmers ({filteredFarmers.length})
                 </h3>
                 <button
                   onClick={() => setShowFarmersList(false)}
-                  className="text-slate-400 hover:text-white transition-colors"
+                  className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-700/50 touch-manipulation min-w-[44px] min-h-[44px] flex items-center justify-center"
+                  aria-label="Close farmers list"
                 >
                   <XCircleIcon className="w-5 h-5" />
                 </button>
               </div>
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {farmers.map((farmer, idx) => (
-                  <motion.div
-                    key={farmer.wallet || idx}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.1 }}
-                    className="p-4 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:bg-slate-900/70 transition-colors"
+
+              {/* Search and Filter */}
+              <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                <div className="relative flex-1">
+                  <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search by district, village, or address..."
+                    value={farmerSearchQuery}
+                    onChange={(e) => setFarmerSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                    aria-label="Search farmers"
+                  />
+                </div>
+                <div className="relative">
+                  <FunnelIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+                  <select
+                    value={farmerFilterStatus}
+                    onChange={(e) => setFarmerFilterStatus(e.target.value as any)}
+                    className="pl-10 pr-8 py-2.5 bg-slate-900/50 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 appearance-none cursor-pointer touch-manipulation min-h-[44px]"
+                    aria-label="Filter farmers by status"
                   >
+                    <option value="all">All Farmers</option>
+                    <option value="eligible">Eligible</option>
+                    <option value="ineligible">Ineligible</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {filteredFarmers.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400">
+                    <UserGroupIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p className="text-sm">
+                      {farmers.length === 0
+                        ? "No farmers registered yet"
+                        : "No farmers match your search criteria"}
+                    </p>
+                  </div>
+                ) : (
+                  filteredFarmers.map((farmer, idx) => (
+                    <motion.div
+                      key={farmer.wallet || idx}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: idx * 0.1 }}
+                      className="p-4 rounded-xl border border-slate-700/50 bg-slate-900/50 hover:bg-slate-900/70 hover:border-slate-600/50 transition-all cursor-pointer group"
+                    >
                     <div className="grid md:grid-cols-2 gap-4">
                       <div>
                         <div className="text-xs text-slate-500 mb-1">Wallet Address</div>
@@ -1489,17 +1788,35 @@ export function AutonomousWorkflow() {
                           {cropOptions.find(c => c.value === farmer.cropType)?.label || "Unknown"}
                         </div>
                       </div>
+                      <div className="md:col-span-2 flex items-center gap-2">
+                        {farmer.registered ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 text-xs font-medium border border-emerald-500/30">
+                            <CheckCircleIcon className="w-3 h-3" />
+                            Registered
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-yellow-500/20 text-yellow-400 text-xs font-medium border border-yellow-500/30">
+                            Pending
+                          </span>
+                        )}
+                      </div>
                       {farmer.registrationTxHash && (
                         <div className="md:col-span-2">
                           <div className="text-xs text-slate-500 mb-1">Registration TX</div>
-                          <div className="text-xs text-purple-400 font-mono break-all">
-                            {farmer.registrationTxHash}
-                          </div>
+                          <a
+                            href={`https://sepolia.etherscan.io/tx/${farmer.registrationTxHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-purple-400 font-mono break-all hover:text-purple-300 underline transition-colors"
+                          >
+                            {farmer.registrationTxHash.slice(0, 20)}...{farmer.registrationTxHash.slice(-10)}
+                          </a>
                         </div>
                       )}
                     </div>
-                  </motion.div>
-                ))}
+                    </motion.div>
+                  ))
+                )}
               </div>
             </motion.div>
           )}
