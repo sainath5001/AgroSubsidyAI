@@ -223,7 +223,7 @@ export function AutonomousWorkflow() {
     functionName: "getFarmerDecision",
     args:
       currentFarmer && weatherEventId
-        ? [currentFarmer.recipientAddress as `0x${string}`, weatherEventId]
+        ? [currentFarmer.recipientAddress as `0x${string}`, BigInt(weatherEventId)]
         : undefined,
     query: {
       enabled: !!currentFarmer && !!weatherEventId,
@@ -809,7 +809,10 @@ export function AutonomousWorkflow() {
 
   const executePayment = () => {
     const farmer = useWorkflowStore.getState().currentFarmer;
-    if (!farmer || !eligibilityProofHash) return;
+    if (!farmer || !eligibilityProofHash || !eligibilityDecision) return;
+
+    const subsidyAmount = eligibilityDecision.subsidyAmount as bigint;
+    if (!subsidyAmount) return;
 
     addAIActivity("execution", "Executing payment with verified proof hash...");
 
@@ -818,7 +821,7 @@ export function AutonomousWorkflow() {
         address: CONTRACT_ADDRESSES.subsidyDistributor,
         abi: SUBSIDY_DISTRIBUTOR_ABI,
         functionName: "executePayment",
-        args: [farmer.recipientAddress as `0x${string}`, eligibilityProofHash as `0x${string}`],
+        args: [farmer.recipientAddress as `0x${string}`, eligibilityProofHash as `0x${string}`, subsidyAmount],
       });
     } catch (error) {
       console.error("Payment execution error:", error);

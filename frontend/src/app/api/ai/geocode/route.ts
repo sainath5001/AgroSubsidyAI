@@ -59,6 +59,9 @@ Make sure the coordinates are valid numbers and correspond to the correct locati
     // Parse JSON from response
     let geocodeData;
     try {
+      if (!text) {
+        throw new Error("No text response from AI");
+      }
       // Remove markdown code blocks if present
       let cleanedText = text.trim();
       if (cleanedText.startsWith("```")) {
@@ -88,6 +91,9 @@ Make sure the coordinates are valid numbers and correspond to the correct locati
       console.error("Raw response:", text);
       
       // Fallback: Try to extract numbers from text
+      if (!text) {
+        throw new Error("No text response from AI");
+      }
       const latMatch = text.match(/latitude["\s:]+([0-9.]+)/i);
       const lonMatch = text.match(/longitude["\s:]+([0-9.]+)/i);
       

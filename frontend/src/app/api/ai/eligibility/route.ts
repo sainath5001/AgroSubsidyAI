@@ -63,6 +63,9 @@ Respond in JSON format:
     // Parse JSON from response
     let eligibilityData;
     try {
+      if (!text) {
+        throw new Error("No text response from AI");
+      }
       const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/\{[\s\S]*\}/);
       eligibilityData = JSON.parse(jsonMatch ? jsonMatch[1] || jsonMatch[0] : text);
     } catch (e) {

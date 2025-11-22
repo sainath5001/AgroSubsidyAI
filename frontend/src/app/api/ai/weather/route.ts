@@ -101,6 +101,9 @@ Be thorough and search your knowledge base - many regions have experienced actua
       
       // Access text property directly from response
       text = response.text;
+      if (!text) {
+        throw new Error("No text response from AI");
+      }
       console.log("Gemini API response received, length:", text.length);
       console.log("First 500 chars of response:", text.substring(0, 500));
     } catch (apiError: any) {
@@ -157,7 +160,10 @@ Respond in JSON:
             contents: aggressivePrompt,
           });
           const secondText = secondResponse.text;
-          
+
+          if (!secondText) {
+            throw new Error("No text response from second AI call");
+          }
           const secondJsonMatch = secondText.match(/```json\s*([\s\S]*?)\s*```/) || secondText.match(/\{[\s\S]*\}/);
           const secondData = JSON.parse(secondJsonMatch ? secondJsonMatch[1] || secondJsonMatch[0] : secondText);
           

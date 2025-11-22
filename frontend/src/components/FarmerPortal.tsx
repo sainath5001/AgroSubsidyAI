@@ -11,7 +11,7 @@ import {
   useSwitchChain,
   useChainId,
 } from "wagmi";
-import { parseEther } from "viem";
+import { parseEther, formatEther } from "viem";
 import { SectionTitle } from "./SectionTitle";
 import { CONTRACT_ADDRESSES, SUBSIDY_DISTRIBUTOR_ABI } from "../lib/constants";
 import { sepolia } from "wagmi/chains";
@@ -99,8 +99,8 @@ export function FarmerPortal() {
                     {address?.slice(0, 6)}…{address?.slice(-4)}
                   </p>
                   <p className="text-sm text-slate-300">
-                    Balance: {balanceData?.formatted
-                      ? `${Number(balanceData.formatted).toFixed(4)} ${
+                    Balance: {balanceData
+                      ? `${Number(formatEther(balanceData.value)).toFixed(4)} ${
                           balanceData.symbol
                         }`
                       : "–"}

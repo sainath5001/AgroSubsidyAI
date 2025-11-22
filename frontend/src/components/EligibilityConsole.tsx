@@ -85,11 +85,11 @@ export function EligibilityConsole() {
   const latestSummary = useMemo(() => {
     if (!latestDecision) return null;
     return {
-      eligible: latestDecision[1],
-      amount: formatEther(latestDecision[2] || 0n),
-      reason: latestDecision[4],
-      weatherEvent: latestDecision[5],
-      timestamp: Number(latestDecision[6]) * 1000,
+      eligible: latestDecision.isEligible,
+      amount: formatEther(latestDecision.subsidyAmount || BigInt(0)),
+      reason: latestDecision.reason,
+      weatherEvent: latestDecision.weatherEventId,
+      timestamp: Number(latestDecision.timestamp) * 1000,
     };
   }, [latestDecision]);
 
